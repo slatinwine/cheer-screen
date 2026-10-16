@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>应援滚动屏</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #000; }
+
+  /* ===== 输入页 ===== */
+  #setup {
+    height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #000; color: #fff; padding: 24px; gap: 20px;
+  }
+  #setup h1 { font-size: 22px; font-weight: 600; letter-spacing: 2px; }
+  #setup .hint { font-size: 13px; color: #888; }
+  #textInput {
+    width: 100%; max-width: 420px;
+    padding: 14px 16px; font-size: 18px;
+    background: #111; color: #fff;
+    border: 1px solid #333; border-radius: 10px;
+    outline: none; text-align: center;
+  }
+  #textInput:focus { border-color: #fff; }
+  #startBtn {
+    width: 100%; max-width: 420px;
+    padding: 14px; font-size: 17px; font-weight: 600; letter-spacing: 4px;
+    background: #fff; color: #000; border: none; border-radius: 10px;
+    cursor: pointer;
+  }
+  #startBtn:active { opacity: .8; }
+  #quickTags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 420px; }
+  #quickTags button {
+    padding: 6px 14px; font-size: 13px;
+    background: #111; color: #bbb;
+    border: 1px solid #333; border-radius: 999px; cursor: pointer;
+  }
+  #quickTags button:active { color: #fff; border-color: #fff; }
+
+  /* ===== 滚动屏 ===== */
+  #screen { position: fixed; inset: 0; background: #000; display: none; }
+  #stage { position: absolute; left: 50%; top: 50%; transform-origin: center; }
+  #marqueeWrap {
+    position: absolute; left: 0; right: 0;
+    top: 50%; transform: translateY(-50%);
+    overflow: hidden; white-space: nowrap;
+  }
+  #marquee {
+    display: inline-block; color: #fff; font-weight: 700;
+    padding-left: 100vw; /* 保证从右侧屏幕外进入 */
+    will-change: transform;
+  }
+  #screen .exit {
+    position: absolute; top: max(12px, env(safe-area-inset-top)); right: 14px;
+    padding: 8px 18px; font-size: 14px;
+    background: rgba(255,255,255,.08); color: #fff;
+    border: 1px solid rgba(255,255,255,.25); border-radius: 999px;
+    cursor: pointer; opacity: .35; transition: opacity .3s;
+  }
+  #screen .exit:hover, #screen .exit:active { opacity: 1; }
+  #screen .ctrls {
+    position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 0; right: 0;
+    display: flex; justify-content: center; gap: 10px;
+    opacity: .3; transition: opacity .3s;
+  }
+  #screen .ctrls:hover, #screen .ctrls:active { opacity: 1; }
+  #screen .ctrls button {
+    padding: 8px 16px; font-size: 14px;
+    background: rgba(255,255,255,.08); color: #fff;
+    border: 1px solid rgba(255,255,255,.25); border-radius: 999px; cursor: pointer;
+  }
+  #toast {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    max-width: 80vw; padding: 14px 22px;
+    background: rgba(255,255,255,.92); color: #000;
+    font-size: 15px; border-radius: 12px; text-align: center; line-height: 1.6;
+    opacity: 0; transition: opacity .4s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- 输入页 -->
+<div id="setup">
+  <h1>应援滚动屏</h1>
+  <div class="hint">输入想滚动的话，点击开始，把手机横过来举起来吧</div>
+  <input id="textInput" type="text" placeholder="输入应援文字…" maxlength="50" autocomplete="off">
+  <div id="quickTags">
+    <button data-text="我爱你">我爱你</button>
+    <button data-text="辛苦了">辛苦了</button>
+    <button data-text="今天也超棒！">今天也超棒！</button>
+    <button data-text="永远支持你">永远支持你</button>
+    <button data-text="前进！">前进！</button>
+  </div>
+  <button id="startBtn">开 始 应 援</button>
+</div>
+
+<!-- 滚动屏 -->
+<div id="screen">
+  <div id="stage">
+    <div id="marqueeWrap"><div id="marquee">文字</div></div>
+  </div>
+  <button class="exit" id="exitBtn">退出</button>
+  <div class="ctrls">
+    <button id="slower">← 慢</button>
+    <button id="faster">快 →</button>
+    <button id="bigger">A+</button>
+    <button id="smaller">A−</button>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<script>
+(function () {
+  var input = document.getElementById('textInput');
+  var screen = document.getElementById('screen');
+  var stage = document.getElementById('stage');
+  var marquee = document.getElementById('marquee');
+  var toast = document.getElementById('toast');
+
+  var speed = 120;   // px/秒
+  var fontSize = 60; // px
+  var pos = 0, last = 0, raf = null;
+  var wakeLock = null;
+
+  // ===== 布局：横屏直接铺满；竖屏把舞台旋转 90°，让文字沿长边滚动 =====
+  function layout() {
+    var w = window.innerWidth, h = window.innerHeight;
+    if (w >= h) {
+      stage.style.width = w + 'px';
+      stage.style.height = h + 'px';
+      stage.style.transform = 'translate(-50%,-50%) rotate(0deg)';
+    } else {
+      stage.style.width = h + 'px';
+      stage.style.height = w + 'px';
+      stage.style.transform = 'translate(-50%,-50%) rotate(90deg)';
+    }
+  }
+  window.addEventListener('resize', layout);
+  window.addEventListener('orientationchange', layout);
+
+  // ===== 亮度保持：Wake Lock 防止屏幕自动变暗/熄灭 =====
+  function requestWakeLock() {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request('screen').then(function (wl) {
+        wakeLock = wl;
+      }).catch(function () {});
+    }
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { wakeLock.release().catch(function(){}); wakeLock = null; }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && screen.style.display === 'block') requestWakeLock();
+  });
+
+  // ===== 提示 =====
+  var toastTimer = null;
+  function showToast(msg, ms) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('show'); }, ms || 3000);
+  }
+
+  document.querySelectorAll('#quickTags button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      input.value = b.dataset.text;
+      input.focus();
+    });
+  });
+
+  document.getElementById('startBtn').addEventListener('click', start);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') start();
+  });
+
+  function start() {
+    var text = (input.value || '').trim();
+    if (!text) { input.focus(); return; }
+    marquee.textContent = text + '\u3000\u3000\u3000\u3000';
+    marquee.style.fontSize = fontSize + 'px';
+    pos = 0;
+    layout();
+    screen.style.display = 'block';
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(function(){});
+    }
+    screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(function(){});
+    requestWakeLock();
+    // 浏览器无法改系统背光，提醒用户手动拉满亮度
+    setTimeout(function () {
+      showToast('网页无法直接调系统亮度\n请手动把亮度拉满，效果最佳', 3500);
+    }, 400);
+    last = performance.now();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+  }
+
+  function tick(now) {
+    var dt = (now - last) / 1000;
+    last = now;
+    pos -= speed * dt;
+    var width = marquee.offsetWidth;
+    if (-pos > width) pos = 0; // 无缝循环
+    marquee.style.transform = 'translateX(' + pos + 'px)';
+    raf = requestAnimationFrame(tick);
+  }
+
+  document.getElementById('exitBtn').addEventListener('click', exit);
+  screen.addEventListener('click', function (e) {
+    // 点击屏幕空白处也退出，方便单手操作
+    if (e.target === screen || e.target === stage || e.target.id === 'marqueeWrap') exit();
+  });
+
+  function exit() {
+    cancelAnimationFrame(raf);
+    screen.style.display = 'none';
+    releaseWakeLock();
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function(){});
+  }
+
+  document.getElementById('faster').addEventListener('click', function () { speed = Math.min(600, speed + 40); });
+  document.getElementById('slower').addEventListener('click', function () { speed = Math.max(40, speed - 40); });
+  document.getElementById('bigger').addEventListener('click', function () { fontSize = Math.min(200, fontSize + 10); marquee.style.fontSize = fontSize + 'px'; });
+  document.getElementById('smaller').addEventListener('click', function () { fontSize = Math.max(24, fontSize - 10); marquee.style.fontSize = fontSize + 'px'; });
+})();
+</script>
+</body>
+</html>
