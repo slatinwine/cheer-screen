@@ -82,6 +82,7 @@
     opacity: 0; transition: opacity .4s; pointer-events: none;
   }
   #toast.show { opacity: 1; }
+  #screen.ui-hidden .exit, #screen.ui-hidden .ctrls { opacity: 0; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -108,7 +109,7 @@
   </div>
   <button class="exit" id="exitBtn">退出</button>
   <div class="ctrls">
-    <label>速度<input type="range" id="speedRange" min="40" max="600" step="10"></label>
+    <label>速度<input type="range" id="speedRange" min="40" max="1500" step="10"></label>
     <label>字号<input type="range" id="sizeRange" min="24" max="1200" step="2"></label>
   </div>
   <div id="toast"></div>
@@ -122,9 +123,10 @@
   var marquee = document.getElementById('marquee');
   var toast = document.getElementById('toast');
 
-  var speed = 120;   // px/秒
-  var fontSize = 60; // px
+  var speed = 120;     // px/秒
+  var fontSize = 60;   // px
   var pos = 0, last = 0, raf = null;
+  var unitWidth = 0;   // 单个文字单元宽度（无缝循环用）
   var wakeLock = null;
 
   // ===== 布局：横屏直接铺满；竖屏把舞台旋转 90°，让文字沿长边滚动 =====
@@ -190,8 +192,15 @@
   function start() {
     var text = (input.value || '').trim();
     if (!text) { input.focus(); return; }
-    marquee.textContent = text + '\u3000\u3000\u3000\u3000';
+    // 无缝循环：文字单元重复 3 份，滚过一个单元宽度就补位，消除黑屏等待
+    marquee.textContent = '';
+    for (var i = 0; i < 3; i++) {
+      var u = document.createElement('span');
+      u.textContent = text + '\u3000\u3000';
+      marquee.appendChild(u);
+    }
     marquee.style.fontSize = fontSize + 'px';
+    unitWidth = marquee.firstChild.offsetWidth;
     speedRange.value = speed;
     sizeRange.value = fontSize;
     pos = 0;
@@ -209,27 +218,45 @@
     last = performance.now();
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(tick);
+    showUI(); // 进入后 4 秒无操作自动隐藏 UI
   }
 
   function tick(now) {
     var dt = (now - last) / 1000;
     last = now;
     pos -= speed * dt;
-    var width = marquee.offsetWidth;
-    if (-pos > width) pos = 0; // 无缝循环
+    if (unitWidth > 0 && -pos >= unitWidth) pos += unitWidth; // 无缝补位
     marquee.style.transform = 'translateX(' + pos + 'px)';
     raf = requestAnimationFrame(tick);
   }
 
   document.getElementById('exitBtn').addEventListener('click', exit);
+
+  // ===== UI 自动隐藏：点击屏幕空白处切换显示/隐藏，4 秒无操作自动隐藏 =====
+  var uiTimer = null;
+  function showUI() {
+    screen.classList.remove('ui-hidden');
+    clearTimeout(uiTimer);
+    uiTimer = setTimeout(hideUI, 4000);
+  }
+  function hideUI() { screen.classList.add('ui-hidden'); }
+
+  screen.addEventListener('pointerdown', function () {
+    // 任何触摸（包括拖滑条）都会重置自动隐藏倒计时
+    if (!screen.classList.contains('ui-hidden')) showUI();
+  });
   screen.addEventListener('click', function (e) {
-    // 点击屏幕空白处也退出，方便单手操作
-    if (e.target === screen || e.target === stage || e.target.id === 'marqueeWrap') exit();
+    // 点空白处：UI 隐藏时唤出，UI 显示时隐藏
+    if (e.target === screen || e.target === stage || e.target.id === 'marqueeWrap') {
+      if (screen.classList.contains('ui-hidden')) showUI(); else hideUI();
+    }
   });
 
   function exit() {
     cancelAnimationFrame(raf);
     screen.style.display = 'none';
+    screen.classList.remove('ui-hidden');
+    clearTimeout(uiTimer);
     releaseWakeLock();
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function(){});
   }
@@ -240,6 +267,7 @@
   sizeRange.addEventListener('input', function () {
     fontSize = +sizeRange.value;
     marquee.style.fontSize = fontSize + 'px';
+    if (marquee.firstChild) unitWidth = marquee.firstChild.offsetWidth;
   });
 })();
 </script>
