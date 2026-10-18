@@ -62,14 +62,16 @@
   #screen .exit:hover, #screen .exit:active { opacity: 1; }
   #screen .ctrls {
     position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 0; right: 0;
-    display: flex; justify-content: center; gap: 10px;
+    display: flex; justify-content: center; align-items: center; gap: 18px;
     opacity: .3; transition: opacity .3s;
   }
   #screen .ctrls:hover, #screen .ctrls:active { opacity: 1; }
-  #screen .ctrls button {
-    padding: 8px 16px; font-size: 14px;
-    background: rgba(255,255,255,.08); color: #fff;
-    border: 1px solid rgba(255,255,255,.25); border-radius: 999px; cursor: pointer;
+  #screen .ctrls label {
+    display: flex; align-items: center; gap: 8px;
+    color: #fff; font-size: 14px;
+  }
+  #screen .ctrls input[type="range"] {
+    width: 130px; accent-color: #fff; cursor: pointer;
   }
   #toast {
     position: absolute; top: 50%; left: 50%;
@@ -106,10 +108,8 @@
   </div>
   <button class="exit" id="exitBtn">退出</button>
   <div class="ctrls">
-    <button id="slower">← 慢</button>
-    <button id="faster">快 →</button>
-    <button id="bigger">A+</button>
-    <button id="smaller">A−</button>
+    <label>速度<input type="range" id="speedRange" min="40" max="600" step="10"></label>
+    <label>字号<input type="range" id="sizeRange" min="24" max="1200" step="2"></label>
   </div>
   <div id="toast"></div>
 </div>
@@ -138,6 +138,14 @@
       stage.style.width = h + 'px';
       stage.style.height = w + 'px';
       stage.style.transform = 'translate(-50%,-50%) rotate(90deg)';
+    }
+    // 字号上限动态跟随屏幕短边：拉满即基本撑满屏幕高度（留 5% 防裁切）
+    var maxFont = Math.floor(Math.min(w, h) * 0.95);
+    sizeRange.max = maxFont;
+    if (fontSize > maxFont) {
+      fontSize = maxFont;
+      marquee.style.fontSize = fontSize + 'px';
+      sizeRange.value = fontSize;
     }
   }
   window.addEventListener('resize', layout);
@@ -184,6 +192,8 @@
     if (!text) { input.focus(); return; }
     marquee.textContent = text + '\u3000\u3000\u3000\u3000';
     marquee.style.fontSize = fontSize + 'px';
+    speedRange.value = speed;
+    sizeRange.value = fontSize;
     pos = 0;
     layout();
     screen.style.display = 'block';
@@ -224,10 +234,13 @@
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function(){});
   }
 
-  document.getElementById('faster').addEventListener('click', function () { speed = Math.min(600, speed + 40); });
-  document.getElementById('slower').addEventListener('click', function () { speed = Math.max(40, speed - 40); });
-  document.getElementById('bigger').addEventListener('click', function () { fontSize = Math.min(200, fontSize + 10); marquee.style.fontSize = fontSize + 'px'; });
-  document.getElementById('smaller').addEventListener('click', function () { fontSize = Math.max(24, fontSize - 10); marquee.style.fontSize = fontSize + 'px'; });
+  var speedRange = document.getElementById('speedRange');
+  var sizeRange = document.getElementById('sizeRange');
+  speedRange.addEventListener('input', function () { speed = +speedRange.value; });
+  sizeRange.addEventListener('input', function () {
+    fontSize = +sizeRange.value;
+    marquee.style.fontSize = fontSize + 'px';
+  });
 })();
 </script>
 </body>
