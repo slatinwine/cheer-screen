@@ -246,10 +246,10 @@
     if (!screen.classList.contains('ui-hidden')) showUI();
   });
   screen.addEventListener('click', function (e) {
-    // 点空白处：UI 隐藏时唤出，UI 显示时隐藏
-    if (e.target === screen || e.target === stage || e.target.id === 'marqueeWrap') {
-      if (screen.classList.contains('ui-hidden')) showUI(); else hideUI();
-    }
+    // 点退出按钮/滑条以外任何地方：UI 隐藏时唤出，UI 显示时隐藏
+    // （用反向判断，避免点在文字 marquee 层上时被漏掉）
+    if (e.target.closest && e.target.closest('.exit, .ctrls')) return;
+    if (screen.classList.contains('ui-hidden')) showUI(); else hideUI();
   });
 
   function exit() {
