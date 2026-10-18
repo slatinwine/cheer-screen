@@ -49,7 +49,6 @@
   }
   #marquee {
     display: inline-block; color: #fff; font-weight: 700;
-    padding-left: 100vw; /* 保证从右侧屏幕外进入 */
     will-change: transform;
   }
   #screen .exit {
@@ -127,16 +126,19 @@
   var fontSize = 60;   // px
   var pos = 0, last = 0, raf = null;
   var unitWidth = 0;   // 单个文字单元宽度（无缝循环用）
+  var stageW = 0;      // 滚动区宽度（长边）
   var wakeLock = null;
 
   // ===== 布局：横屏直接铺满；竖屏把舞台旋转 90°，让文字沿长边滚动 =====
   function layout() {
     var w = window.innerWidth, h = window.innerHeight;
     if (w >= h) {
+      stageW = w;
       stage.style.width = w + 'px';
       stage.style.height = h + 'px';
       stage.style.transform = 'translate(-50%,-50%) rotate(0deg)';
     } else {
+      stageW = h;
       stage.style.width = h + 'px';
       stage.style.height = w + 'px';
       stage.style.transform = 'translate(-50%,-50%) rotate(90deg)';
@@ -148,6 +150,15 @@
       fontSize = maxFont;
       marquee.style.fontSize = fontSize + 'px';
       sizeRange.value = fontSize;
+    }
+    // 运行中旋转/缩放屏幕时，按新宽度重建文字副本并重排
+    if (unitText && screen.style.display === 'block') {
+      var oldUw = unitWidth;
+      buildUnits();
+      if (unitWidth > 0 && oldUw > 0) {
+        // 保持补位相位，避免跳变
+        pos = pos % unitWidth - stageW;
+      }
     }
   }
   window.addEventListener('resize', layout);
@@ -189,23 +200,37 @@
     if (e.key === 'Enter') start();
   });
 
+  var unitText = ''; // 当前滚动的文字单元（文字 + 间隔空格）
+
+  // 按需生成足够铺满滚动区的文字副本（铺满 + 1 份余量，短文字也不会右侧露空）
+  function buildUnits() {
+    marquee.textContent = '';
+    if (!unitText) return;
+    var u = document.createElement('span');
+    u.textContent = unitText;
+    marquee.appendChild(u);
+    var uw = u.offsetWidth;
+    if (uw > 0) {
+      var n = Math.max(3, Math.ceil(stageW / uw) + 1);
+      for (var i = 1; i < n; i++) marquee.appendChild(u.cloneNode(true));
+      unitWidth = uw;
+    }
+  }
+
   function start() {
     var text = (input.value || '').trim();
     if (!text) { input.focus(); return; }
-    // 无缝循环：文字单元重复 3 份，滚过一个单元宽度就补位，消除黑屏等待
-    marquee.textContent = '';
-    for (var i = 0; i < 3; i++) {
-      var u = document.createElement('span');
-      u.textContent = text + '\u3000\u3000';
-      marquee.appendChild(u);
-    }
+    unitText = text + '\u3000\u3000';
     marquee.style.fontSize = fontSize + 'px';
-    unitWidth = marquee.firstChild.offsetWidth;
     speedRange.value = speed;
     sizeRange.value = fontSize;
     pos = 0;
     layout();
     screen.style.display = 'block';
+    // 关键：屏幕显示出来之后才能测宽，display:none 时 offsetWidth 恒为 0，
+    // 会导致补位逻辑失效（表现为滚完黑屏卡死）
+    buildUnits();
+    pos = stageW; // 文字从滚动区右缘外进入
     if (document.documentElement.requestFullscreen) {
       document.documentElement.requestFullscreen().catch(function(){});
     }
@@ -225,6 +250,8 @@
     var dt = (now - last) / 1000;
     last = now;
     pos -= speed * dt;
+    // 兜底：万一进入时测宽失败，运行中补测一次
+    if (unitWidth === 0 && marquee.firstChild) unitWidth = marquee.firstChild.offsetWidth;
     if (unitWidth > 0 && -pos >= unitWidth) pos += unitWidth; // 无缝补位
     marquee.style.transform = 'translateX(' + pos + 'px)';
     raf = requestAnimationFrame(tick);
@@ -267,7 +294,7 @@
   sizeRange.addEventListener('input', function () {
     fontSize = +sizeRange.value;
     marquee.style.fontSize = fontSize + 'px';
-    if (marquee.firstChild) unitWidth = marquee.firstChild.offsetWidth;
+    if (unitText) buildUnits();
   });
 })();
 </script>
